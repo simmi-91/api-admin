@@ -71,6 +71,9 @@ jobs:
               test -f node_modules/express/package.json || { echo 'express missing after install'; exit 1; }
             "
 
+            #sudo chown -R www-data:www-data /var/www/admin/server
+            sudo chmod -R 755 /var/www/admin/server
+
             # Restart server
             sudo -u $USER pm2 stop admin || true
             sudo -u $USER pm2 delete admin || true
