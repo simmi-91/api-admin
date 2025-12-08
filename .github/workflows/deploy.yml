@@ -33,6 +33,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            echo "*** BEGIN deployment "
+
             USER=${{ secrets.DEPLOY_RUN_AS_USER }}
 
             # Navigate to deployment location
