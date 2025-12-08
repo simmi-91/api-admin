@@ -63,7 +63,7 @@ jobs:
             sudo chown -R $USER:$USER .
 
             # Create env file
-            echo "${{ secrets.ENV_FILE_CONTENT }}" | sudo -u $USER tee .env > /dev/null
+            echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
 
             # Install dependencies
             sudo -u $USER pnpm install --prod
