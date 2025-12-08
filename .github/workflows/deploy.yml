@@ -21,6 +21,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "server.js,package.json,pnpm-lock.yaml,src/"
           target: "/tmp/admin-deploy-server"
           rm: true # Clean target directory first
           strip_components: 0 # Behold mappestruktur
@@ -34,4 +35,44 @@ jobs:
           script: |
             USER=${{ secrets.DEPLOY_RUN_AS_USER }}
 
-            echo "TODO..."
+            # Navigate to deployment location
+            cd /var/www/admin/
+
+            # Remove old backup if exists
+            if [ -d "server_old" ]; then
+              sudo rm -rf server_old
+              echo "Removed server_old"
+            fi
+
+            # Rename current to old (if exists)
+            if [ -d "server" ]; then
+              sudo mv server server_old
+              echo "Renamed server to server_old"
+            fi
+            # Move new server files from temp location
+            sudo mv /tmp/admin-deploy-server server
+
+            # Navigate into the new server directory
+            cd server
+
+            # Ensure deploy user owns working dir
+            sudo chown -R $USER:$USER /var/www/admin/server
+
+            # create env file 
+            echo "${{ secrets.ENV_FILE_CONTENT }}" > .env 
+
+            # Install dependencies
+            sudo -u $USER pnpm install --prod
+
+            sudo -u $USER bash -lc "test -f /var/www/admin/server/node_modules/express/package.json || { echo 'express missing after install'; exit 1; }"
+
+            sudo chown -R www-data:www-data /var/www/admin/server
+            sudo chmod -R 755 /var/www/admin/server
+
+            # Restart server
+            sudo -u $USER pm2 stop admin || true
+            sudo -u $USER pm2 delete admin || true
+            sudo -u $USER pm2 start server.js --name admin 
+
+            echo "Server deployment complete!"
+            sudo -u $USER pm2 status
