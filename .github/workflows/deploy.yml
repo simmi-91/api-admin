@@ -62,16 +62,17 @@ jobs:
             # Ensure deploy user owns working dir (
             sudo chown -R $USER:$USER .
 
-            # 1. Create env file
-            sudo -u $USER echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+            # Create env file
+            #sudo -u $USER echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+            echo "${{ secrets.ENV_FILE_CONTENT }}" | sudo -u $USER tee .env > /dev/null
 
-            # 2. Install dependencies
+            # Install dependencies
             sudo -u $USER pnpm install --prod
 
-            # 3. Verify installation
-            sudo -u $USER test -f node_modules/express/package.json || { echo 'express missing after install'; exit 1; }
+            # Verify installation
+            sudo -u $USER bash -c "test -f node_modules/express/package.json" || { echo 'express missing after install'; exit 1; }
 
-            #sudo chown -R www-data:www-data /var/www/admin/server
+            sudo chown -R www-data:www-data /var/www/admin/server
             sudo chmod -R 755 /var/www/admin/server
 
             # Restart server
