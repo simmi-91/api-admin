@@ -31,22 +31,16 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ error: "Google ID token is required." });
   }
 
-  console.log("token", token);
-
   let googleId = LOCAL_TEST_ID;
   let email = LOCAL_TEST_EMAIL;
 
-  if (token === "LOCAL_TEST") {
-    googleId = LOCAL_TEST_ID;
-    email = LOCAL_TEST_EMAIL;
-  } else {
+  if (token !== "LOCAL_TEST") {
     const payload = await verifyGoogleToken(token);
     if (!payload) {
       return res
         .status(401)
         .json({ error: "Invalid or expired Google token." });
     }
-
     googleId = payload.sub;
     email = payload.email;
   }
@@ -81,9 +75,13 @@ router.post("/login", async (req, res) => {
       { expiresIn: JWT_EXPIRY }
     );
 
+    const decodedToken = jwt.decode(token);
+    const expiresAt = decodedToken.exp * 1000;
+
     res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, isAdmin: true },
+      expiresAt: expiresAt,
     });
   } catch (error) {
     console.error("Database error during login:", error);

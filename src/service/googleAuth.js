@@ -11,7 +11,7 @@ export async function verifyGoogleToken(token) {
 
   try {
     const ticket = await client.verifyIdToken({
-      token: token,
+      idToken: token,
       audience: GOOGLE_CLIENT_ID,
     });
 
