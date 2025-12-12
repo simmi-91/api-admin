@@ -11,7 +11,7 @@ router.get("/", requireAuth, async (req, res) => {
       "SELECT * FROM wishlist ORDER BY createdAt DESC"
     );
 
-    res.json({ items: rows });
+    res.json(rows);
   } catch (error) {
     console.error("Database error fetching wishlist items:", error);
     res.status(500).json({
