@@ -22,7 +22,7 @@ app.get("/health", (req, res) => {
 
 // Routes
 app.use("/auth", authRoutes);
-app.use("/api/wishlist", wishlistRoutes);
+app.use("/wishlist", wishlistRoutes);
 
 // Start server (skip in test mode)
 if (process.env.NODE_ENV !== "test") {
