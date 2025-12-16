@@ -17,6 +17,7 @@ const allowedOrigins = (process.env.FRONTEND_ORIGINS || "")
   .filter(Boolean);
 const corsOptions = {
   origin: allowedOrigins.length ? allowedOrigins : true,
+  allowedHeaders: ["Content-Type", "Authorization", "X-Custom-Header"],
 };
 app.use(cors(corsOptions));
 app.use(express.json());
