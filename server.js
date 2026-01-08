@@ -28,6 +28,15 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+const SIMULATE_DELAY = process.env.NODE_ENV === "development";
+const DELAY_MS = 2000;
+app.use(async (req, res, next) => {
+  if (SIMULATE_DELAY) {
+    await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+  }
+  next();
+});
+
 // Routes
 app.use("/auth", authRoutes);
 app.use("/wishlist", wishlistRoutes);
