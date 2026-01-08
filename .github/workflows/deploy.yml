@@ -75,6 +75,7 @@ jobs:
             sudo -u $USER pm2 stop admin || true
             sudo -u $USER pm2 delete admin || true
             sudo -u $USER pm2 start server.js --name admin 
+            sudo -u $USER pm2 save
 
             echo "Server deployment complete!"
             sudo -u $USER pm2 status
