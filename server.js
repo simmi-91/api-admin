@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 
 import authRoutes from "./src/routes/auth.js";
 import wishlistRoutes from "./src/routes/wishlist.js";
@@ -40,6 +41,12 @@ app.use(async (req, res, next) => {
 // Routes
 app.use("/auth", authRoutes);
 app.use("/wishlist", wishlistRoutes);
+
+if (process.env.NODE_ENV !== "production") {
+  const uploadsPath = path.join(process.cwd(), "uploads");
+  app.use("/uploads", express.static(uploadsPath));
+  console.log(`Serving uploads from: ${uploadsPath}`);
+}
 
 // Start server (skip in test mode)
 if (process.env.NODE_ENV !== "test") {
