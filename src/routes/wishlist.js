@@ -1,5 +1,6 @@
 import express from "express";
 import dbPool from "../database.js";
+import multer from "multer";
 
 import { requireAuth, verifyAdmin } from "../middleware/authMiddleware.js";
 import {
@@ -38,6 +39,7 @@ router.get("/", requireAuth, async (req, res) => {
         delete wishlistMap[row.id].image_id;
         delete wishlistMap[row.id].image_path;
         delete wishlistMap[row.id].display_order;
+        delete wishlistMap[row.id].image_type;
       }
 
       if (row.image_id) {
@@ -45,6 +47,7 @@ router.get("/", requireAuth, async (req, res) => {
           id: row.image_id,
           path: row.image_path,
           display_order: row.display_order,
+          image_type: row.image_type,
           url: createFullImageUrl(row.image_path, row.image_type),
         });
       }
@@ -132,34 +135,39 @@ router.get("/images/gallery", requireAuth, async (req, res) => {
   }
 });
 
-router.delete("/images/gallery/:imagePath", requireAuth, async (req, res) => {
-  const { imagePath } = req.params;
+router.delete(
+  "/images/gallery/:imagePath",
+  requireAuth,
+  verifyAdmin,
+  async (req, res) => {
+    const { imagePath } = req.params;
 
-  if (!imagePath) {
-    return res
-      .status(400)
-      .json({ error: "imagePath is required to deltete an existing image" });
-  }
-
-  try {
-    const [rows] = await dbPool.query(
-      "SELECT id FROM wish_images WHERE image_path = ? AND image_type = 'r2'",
-      [imagePath]
-    );
-    if (rows.length > 0) {
-      await dbPool.query("DELETE FROM wish_images WHERE image_path = ?", [
-        imagePath,
-      ]);
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ error: "imagePath is required to deltete an existing image" });
     }
 
-    await deleteFromR2(imagePath);
+    try {
+      const [rows] = await dbPool.query(
+        "SELECT id FROM wish_images WHERE image_path = ? AND image_type = 'r2'",
+        [imagePath]
+      );
+      if (rows.length > 0) {
+        await dbPool.query("DELETE FROM wish_images WHERE image_path = ?", [
+          imagePath,
+        ]);
+      }
 
-    res.status(200).json({ message: "Image deleted from R2 and database." });
-  } catch (error) {
-    console.error("Error on deleting:", error);
-    res.status(500).json({ error: error.message });
+      await deleteFromR2(imagePath);
+
+      res.status(200).json({ message: "Image deleted from R2 and database." });
+    } catch (error) {
+      console.error("Error on deleting:", error);
+      res.status(500).json({ error: error.message });
+    }
   }
-});
+);
 
 // Resource - SINGLE WISH
 router.put("/:id", requireAuth, verifyAdmin, async (req, res) => {
@@ -255,7 +263,29 @@ router.post(
   "/:id/images",
   requireAuth,
   verifyAdmin,
-  wishlistUpload.single("image"),
+  (req, res, next) => {
+    wishlistUpload.single("image")(req, res, (err) => {
+      if (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ 
+              error: 'File too large. Maximum size is 5MB.' 
+            });
+          }
+          return res.status(400).json({ error: err.message });
+        }
+        
+        if (err.message === 'Only image files are allowed') {
+          return res.status(400).json({ 
+            error: 'Only image files are allowed (jpeg, jpg, png, gif, webp)' 
+          });
+        }
+
+        return res.status(500).json({ error: err.message });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     try {
       const file = req.file;
@@ -264,7 +294,8 @@ router.post(
       }
 
       const { id } = req.params;
-      const customName = file.filename || file.originalname;
+      const { filename } = req.body;
+      const customName = filename || "";
 
       const r2Data = await uploadToR2(req.file, customName);
 
