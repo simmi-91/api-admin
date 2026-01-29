@@ -15,6 +15,54 @@ import {
 const router = express.Router();
 
 // Resource - WISHLIST
+router.get("/active", async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(`
+      SELECT 
+        w.*, 
+        i.id AS image_id, 
+        i.image_path, 
+        i.image_type,
+        i.display_order
+      FROM wishlist w
+      LEFT JOIN wish_images i ON w.id = i.wish_id
+      WHERE w.active=1
+      ORDER BY w.createdAt DESC, i.display_order ASC
+    `);
+
+    const wishlistMap = {};
+    rows.forEach((row) => {
+      if (!wishlistMap[row.id]) {
+        wishlistMap[row.id] = {
+          ...row,
+          images: [],
+        };
+        delete wishlistMap[row.id].image_id;
+        delete wishlistMap[row.id].image_path;
+        delete wishlistMap[row.id].display_order;
+        delete wishlistMap[row.id].image_type;
+      }
+
+      if (row.image_id) {
+        wishlistMap[row.id].images.push({
+          id: row.image_id,
+          path: row.image_path,
+          display_order: row.display_order,
+          image_type: row.image_type,
+          url: createFullImageUrl(row.image_path, row.image_type),
+        });
+      }
+    });
+
+    res.json(Object.values(wishlistMap));
+  } catch (error) {
+    console.error("Database error fetching wishlist items:", error);
+    res.status(500).json({
+      error: "Failed to retrieve wishlist items due to a server error.",
+    });
+  }
+});
+
 router.get("/", requireAuth, async (req, res) => {
   try {
     const [rows] = await dbPool.query(`
@@ -151,7 +199,7 @@ router.delete(
     try {
       const [rows] = await dbPool.query(
         "SELECT id FROM wish_images WHERE image_path = ? AND image_type = 'r2'",
-        [imagePath]
+        [imagePath],
       );
       if (rows.length > 0) {
         await dbPool.query("DELETE FROM wish_images WHERE image_path = ?", [
@@ -166,7 +214,7 @@ router.delete(
       console.error("Error on deleting:", error);
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
 // Resource - SINGLE WISH
@@ -247,7 +295,7 @@ router.get("/:id/images", requireAuth, async (req, res) => {
   try {
     const [rows] = await dbPool.query(
       "SELECT * FROM wish_images WHERE wish_id = ? ORDER BY wish_id ASC, display_order ASC",
-      [id]
+      [id],
     );
 
     res.json(rows);
@@ -267,17 +315,17 @@ router.post(
     wishlistUpload.single("image")(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
-          if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(413).json({ 
-              error: 'File too large. Maximum size is 5MB.' 
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(413).json({
+              error: "File too large. Maximum size is 5MB.",
             });
           }
           return res.status(400).json({ error: err.message });
         }
-        
-        if (err.message === 'Only image files are allowed') {
-          return res.status(400).json({ 
-            error: 'Only image files are allowed (jpeg, jpg, png, gif, webp)' 
+
+        if (err.message === "Only image files are allowed") {
+          return res.status(400).json({
+            error: "Only image files are allowed (jpeg, jpg, png, gif, webp)",
           });
         }
 
@@ -305,7 +353,7 @@ router.post(
         ?, 'r2', ?, now(),
         (SELECT next_val FROM (SELECT COALESCE(MAX(display_order), 0) + 1 AS next_val FROM wish_images WHERE wish_id = ?) AS temp_table)
        )`,
-        [id, r2Data.key, id]
+        [id, r2Data.key, id],
       );
 
       res.status(201).json({
@@ -325,7 +373,7 @@ router.post(
         details: error.message,
       });
     }
-  }
+  },
 );
 
 router.post(
@@ -345,13 +393,13 @@ router.post(
     try {
       await dbPool.query(
         "INSERT INTO wish_images (wish_id, image_type, image_path, display_order) VALUES (?, 'r2', ?, 0)",
-        [id, imagePath]
+        [id, imagePath],
       );
       res.status(201).json({ message: "Image attached successfully" });
     } catch (error) {
       res.status(500).json({ error: "Failed to attach image" });
     }
-  }
+  },
 );
 
 router.post("/:id/images/url", requireAuth, verifyAdmin, async (req, res) => {
@@ -367,7 +415,7 @@ router.post("/:id/images/url", requireAuth, verifyAdmin, async (req, res) => {
   try {
     await dbPool.query(
       "INSERT INTO wish_images (wish_id, image_type, image_path, display_order) VALUES (?, 'url', ?, 0)",
-      [id, imagePath]
+      [id, imagePath],
     );
     res.status(201).json({ message: "External attached successfully" });
   } catch (error) {
@@ -385,7 +433,7 @@ router.delete(
     try {
       const [rows] = await dbPool.query(
         "SELECT image_path FROM wish_images WHERE id = ? AND wish_id = ? AND image_type = 'r2'",
-        [imageId, id]
+        [imageId, id],
       );
 
       if (rows.length > 0) {
@@ -399,7 +447,7 @@ router.delete(
       console.error("Error on deleting:", error);
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
 router.delete("/:id/images/", requireAuth, verifyAdmin, async (req, res) => {
@@ -408,7 +456,7 @@ router.delete("/:id/images/", requireAuth, verifyAdmin, async (req, res) => {
   try {
     const [images] = await dbPool.query(
       "SELECT image_path FROM wish_images WHERE wish_id = ? AND image_type = 'r2'",
-      [id]
+      [id],
     );
     const keys = images.map((img) => img.image_path);
     if (keys.length > 0) {
