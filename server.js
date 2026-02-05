@@ -11,14 +11,41 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// Middleware - CORS Configuration
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const defaultOrigins =
+  process.env.NODE_ENV === "production"
+    ? []
+    : [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+      ];
+
+const corsOrigin = allowedOrigins.length ? allowedOrigins : defaultOrigins;
+
+if (process.env.NODE_ENV === "production" && corsOrigin.length === 0) {
+  console.warn(
+    "CORS WARNING: FRONTEND_ORIGINS not configured in production. API will reject cross-origin requests.",
+  );
+}
+
 const corsOptions = {
-  origin: allowedOrigins.length ? allowedOrigins : true,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    if (corsOrigin.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   allowedHeaders: ["Content-Type", "Authorization", "X-Custom-Header"],
+  credentials: true,
 };
 app.use(cors(corsOptions));
 app.use(express.json());
