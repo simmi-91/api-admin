@@ -1,13 +1,22 @@
 import express from "express";
 import dbPool from "../database.js";
-import jwt from "jsonwebtoken";
+import jwt, { type JwtPayload } from "jsonwebtoken";
+import type { RowDataPacket } from "mysql2/promise";
 
 import { verifyGoogleToken } from "../service/googleAuth.js";
 import { requireAuth, verifyAdmin } from "../middleware/authMiddleware.js";
 
+interface UserRow extends RowDataPacket {
+  id: number;
+  googleId: string;
+  email: string;
+  name: string;
+  isAdmin: number;
+}
+
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET ?? "";
 const JWT_EXPIRY = "7d";
 
 const LOCAL_TEST_ID = process.env.LOCAL_TEST_ID;
@@ -15,7 +24,7 @@ const LOCAL_TEST_EMAIL = process.env.LOCAL_TEST_EMAIL;
 
 router.get("/", requireAuth, verifyAdmin, async (req, res) => {
   try {
-    const [users] = await dbPool.query(
+    const [users] = await dbPool.query<UserRow[]>(
       "SELECT id, googleId, email, name, isAdmin, createdAt, updatedAt FROM users"
     );
     res.json({ users });
@@ -46,7 +55,7 @@ router.post("/login", async (req, res) => {
   }
 
   try {
-    const [rows] = await dbPool.query(
+    const [rows] = await dbPool.query<UserRow[]>(
       "SELECT id, googleId, email, name, isAdmin FROM users WHERE googleId = ? OR email = ?",
       [googleId, email]
     );
@@ -75,8 +84,8 @@ router.post("/login", async (req, res) => {
       { expiresIn: JWT_EXPIRY }
     );
 
-    const decodedToken = jwt.decode(token);
-    const expiresAt = decodedToken.exp * 1000;
+    const decodedToken = jwt.decode(token) as JwtPayload;
+    const expiresAt = decodedToken.exp! * 1000;
 
     res.json({
       token,

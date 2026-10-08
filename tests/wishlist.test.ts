@@ -1,14 +1,19 @@
 import { jest } from "@jest/globals";
+import type { NextFunction, Request, Response } from "express";
+import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type { GalleryImage } from "../src/service/imageProvider.js";
 
 jest.unstable_mockModule("../src/service/imageProvider.js", () => ({
   wishlistUpload: {
-    single: jest.fn(() => (req, res, next) => {
+    single: jest.fn(() => (req: Request, res: Response, next: NextFunction) => {
+      // Like multer: parse multipart text fields into req.body (none needed here)
+      req.body = {};
       req.file = {
         originalname: "test.png",
         filename: "test.png",
         mimetype: "image/png",
         buffer: Buffer.from("fake-image-data"),
-      };
+      } as Express.Multer.File;
       next();
     }),
   },
@@ -16,7 +21,7 @@ jest.unstable_mockModule("../src/service/imageProvider.js", () => ({
   deleteFromR2: jest.fn(),
   deleteManyFromR2: jest.fn(),
   listAllImages: jest.fn(),
-  createFullImageUrl: jest.fn((path, type) =>
+  createFullImageUrl: jest.fn((path: string, type: string) =>
     type === "r2" ? `${process.env.R2_PUBLIC_URL}/${path}` : path
   ),
 }));
@@ -27,8 +32,10 @@ const { default: dbPool } = await import("../src/database.js");
 const { getAdminToken, getNonAdminToken } = await import("./testAuth.js");
 const { default: request } = await import("supertest");
 
-let adminToken;
-let nonAdminToken;
+let adminToken: string;
+let nonAdminToken: string;
+
+type HttpMethod = "get" | "post" | "put" | "delete";
 
 describe("Wishlist API", () => {
   beforeAll(async () => {
@@ -45,7 +52,7 @@ describe("Wishlist API", () => {
     } catch (error) {
       console.error(
         "Failed to truncate wishlist and wish images tables:",
-        error.message
+        (error as Error).message
       );
       throw error;
     } finally {
@@ -59,7 +66,7 @@ describe("Wishlist API", () => {
 
   // --- Security Tests ---
 
-  const secureRoutes = [
+  const secureRoutes: { method: HttpMethod; url: string }[] = [
     { method: "get", url: "/wishlist" },
     { method: "post", url: "/wishlist" },
     { method: "put", url: "/wishlist/1" },
@@ -73,7 +80,7 @@ describe("Wishlist API", () => {
     });
   });
 
-  const adminRoutes = [
+  const adminRoutes: { method: HttpMethod; url: string; payload?: object }[] = [
     { method: "post", url: "/wishlist", payload: { title: "Test" } },
     { method: "put", url: "/wishlist/1", payload: { title: "Test" } },
     { method: "delete", url: "/wishlist/1" },
@@ -129,6 +136,27 @@ describe("Wishlist API", () => {
       expect(response.status).toBe(200);
       expect(response.body.length).toBe(1);
     });
+
+    it("should return newest items first (createdAt DESC), not by id", async () => {
+      // The older item gets the lower id, so id order and createdAt order disagree
+      await dbPool.query(
+        `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
+         VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
+        [
+          "Older", "Desc", 0, 1, "2024-01-01 10:00:00", "2024-01-01 10:00:00",
+          "Newer", "Desc", 0, 1, "2025-01-01 10:00:00", "2025-01-01 10:00:00",
+        ]
+      );
+
+      const response = await request(app)
+        .get("/wishlist")
+        .set("Authorization", adminToken);
+      const activeResponse = await request(app).get("/wishlist/active");
+
+      const titles = (body: { title: string }[]) => body.map((item) => item.title);
+      expect(titles(response.body)).toEqual(["Newer", "Older"]);
+      expect(titles(activeResponse.body)).toEqual(["Newer", "Older"]);
+    });
   });
 
   describe("POST /wishlist", () => {
@@ -152,7 +180,7 @@ describe("Wishlist API", () => {
       expect(typeof response.body.id).toBe("number");
       expect(response.body.id).toBeGreaterThan(0);
 
-      const [rows] = await dbPool.query("SELECT * FROM wishlist WHERE id = ?", [
+      const [rows] = await dbPool.query<RowDataPacket[]>("SELECT * FROM wishlist WHERE id = ?", [
         response.body.id,
       ]);
       expect(rows.length).toBe(1);
@@ -195,7 +223,7 @@ describe("Wishlist API", () => {
   describe("PUT /wishlist/:id", () => {
     it("should update an existing item", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Old Title", "Old Desc", 0, 0, now, now]
@@ -217,7 +245,7 @@ describe("Wishlist API", () => {
       expect(response.body.category).toBe(2);
       expect(response.body.active).toBe(1);
 
-      const [rows] = await dbPool.query(
+      const [rows] = await dbPool.query<RowDataPacket[]>(
         "SELECT title, description, category, active FROM wishlist WHERE id = ?",
         [insert.insertId]
       );
@@ -231,7 +259,7 @@ describe("Wishlist API", () => {
 
     it("should return 400 when title is missing", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Keep Title", "Desc", 1, 1, now, now]
@@ -260,7 +288,7 @@ describe("Wishlist API", () => {
   describe("DELETE /wishlist/:id", () => {
     it("should delete an existing item", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Delete Me", "Desc", 0, 1, now, now]
@@ -273,10 +301,34 @@ describe("Wishlist API", () => {
       expect(response.status).toBe(200);
       expect(response.body.message).toBe("Wishlist item deleted");
 
-      const [rows] = await dbPool.query("SELECT * FROM wishlist WHERE id = ?", [
+      const [rows] = await dbPool.query<RowDataPacket[]>("SELECT * FROM wishlist WHERE id = ?", [
         insert.insertId,
       ]);
       expect(rows.length).toBe(0);
+    });
+
+    it("should return 500 only (no second response) when the database fails", async () => {
+      const querySpy = jest
+        .spyOn(dbPool, "query")
+        .mockRejectedValueOnce(new Error("DB down") as never);
+      const jsonSpy = jest.spyOn(app.response, "json");
+      jest.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const response = await request(app)
+          .delete("/wishlist/1")
+          .set("Authorization", adminToken);
+
+        expect(response.status).toBe(500);
+        expect(response.body.error).toBe(
+          "Failed to delete wishlist item due to a server error."
+        );
+        expect(jsonSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        querySpy.mockRestore();
+        jsonSpy.mockRestore();
+        jest.mocked(console.error).mockRestore();
+      }
     });
   });
 
@@ -284,7 +336,7 @@ describe("Wishlist API", () => {
     it("should include images ordered by display_order and build URLs", async () => {
       process.env.R2_PUBLIC_URL = "https://cdn.example.com";
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["With Images", "Desc", 0, 1, now, now]
@@ -301,7 +353,7 @@ describe("Wishlist API", () => {
         .set("Authorization", adminToken);
 
       expect(response.status).toBe(200);
-      const item = response.body.find((i) => i.id === insert.insertId);
+      const item = response.body.find((i: { id: number }) => i.id === insert.insertId);
       expect(item.images).toHaveLength(2);
       expect(item.images[0].display_order).toBe(1);
       expect(item.images[0].url).toBe("https://ext/img.jpg");
@@ -312,12 +364,12 @@ describe("Wishlist API", () => {
   describe("Image routes", () => {
     it("should upload an image to R2 and store DB record", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Upload Target", "Desc", 0, 1, now, now]
       );
-      imageProvider.uploadToR2.mockResolvedValue({
+      jest.mocked(imageProvider.uploadToR2).mockResolvedValue({
         key: "r2/uploaded.png",
         url: "https://cdn.example.com/r2/uploaded.png",
       });
@@ -334,7 +386,7 @@ describe("Wishlist API", () => {
       expect(response.body.path).toBe("r2/uploaded.png");
       expect(imageProvider.uploadToR2).toHaveBeenCalled();
 
-      const [rows] = await dbPool.query(
+      const [rows] = await dbPool.query<RowDataPacket[]>(
         "SELECT image_path, display_order FROM wish_images WHERE wish_id = ?",
         [insert.insertId]
       );
@@ -344,14 +396,15 @@ describe("Wishlist API", () => {
 
     it("should return 409 when R2 reports duplicate file", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Dup Target", "Desc", 0, 1, now, now]
       );
-      const duplicateErr = new Error("DUPLICATE_FILE");
-      duplicateErr.code = "DUPLICATE_FILE";
-      imageProvider.uploadToR2.mockRejectedValue(duplicateErr);
+      const duplicateErr = Object.assign(new Error("DUPLICATE_FILE"), {
+        code: "DUPLICATE_FILE",
+      });
+      jest.mocked(imageProvider.uploadToR2).mockRejectedValue(duplicateErr);
 
       const response = await request(app)
         .post(`/wishlist/${insert.insertId}/images`)
@@ -367,7 +420,7 @@ describe("Wishlist API", () => {
 
     it("should delete all images for a wish and remove from R2", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Delete Images", "Desc", 0, 1, now, now]
@@ -387,7 +440,7 @@ describe("Wishlist API", () => {
         "r2/some.png",
       ]);
 
-      const [rows] = await dbPool.query(
+      const [rows] = await dbPool.query<RowDataPacket[]>(
         "SELECT * FROM wish_images WHERE wish_id = ?",
         [insert.insertId]
       );
@@ -396,19 +449,19 @@ describe("Wishlist API", () => {
 
     it("should delete a single image and remove from R2", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Delete One Image", "Desc", 0, 1, now, now]
       );
 
-      const [img] = await dbPool.query(
+      const [img] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wish_images (wish_id, image_type, image_path, display_order)
          VALUES (?, 'r2', ?, 1)`,
         [insert.insertId, "r2/one.png"]
       );
 
-      imageProvider.deleteFromR2.mockResolvedValue();
+      jest.mocked(imageProvider.deleteFromR2).mockResolvedValue(undefined);
 
       const response = await request(app)
         .delete(`/wishlist/${insert.insertId}/images/${img.insertId}`)
@@ -417,7 +470,7 @@ describe("Wishlist API", () => {
       expect(response.status).toBe(200);
       expect(imageProvider.deleteFromR2).toHaveBeenCalledWith("r2/one.png");
 
-      const [rows] = await dbPool.query(
+      const [rows] = await dbPool.query<RowDataPacket[]>(
         "SELECT * FROM wish_images WHERE id = ?",
         [img.insertId]
       );
@@ -426,7 +479,7 @@ describe("Wishlist API", () => {
 
     it("should require imagePath when attaching existing or external images", async () => {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const [insert] = await dbPool.query(
+      const [insert] = await dbPool.query<ResultSetHeader>(
         `INSERT INTO wishlist (title, description, category, active, createdAt, updated)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Attach Target", "Desc", 0, 1, now, now]
@@ -446,9 +499,9 @@ describe("Wishlist API", () => {
     });
 
     it("should list gallery images from R2", async () => {
-      imageProvider.listAllImages.mockResolvedValue([
+      jest.mocked(imageProvider.listAllImages).mockResolvedValue([
         { key: "file1.png", url: "https://cdn/file1.png" },
-      ]);
+      ] as GalleryImage[]);
 
       const response = await request(app)
         .get("/wishlist/images/gallery")

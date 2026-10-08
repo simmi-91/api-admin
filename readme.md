@@ -6,20 +6,20 @@ This repository contains the backend REST API for the Admin Panel, built using N
 
 ## 🚀 Features
 
-- **Wishlist Management:** CRUD operations for tracking wishlist items, enforced with a unique title constraint.
-- **Health Check:** Endpoint available at `/health` for server status monitoring.
-- **Security:** Ready to integrate future password protection/authentication middleware (e.g., using JWT).
-- **Environment Agnostic:** Uses separate configuration for development (Dockerized MySQL) and production (External MySQL).
+-   **Wishlist Management:** CRUD operations for tracking wishlist items, enforced with a unique title constraint.
+-   **Health Check:** Endpoint available at `/health` for server status monitoring.
+-   **Security:** Ready to integrate future password protection/authentication middleware (e.g., using JWT).
+-   **Environment Agnostic:** Uses separate configuration for development (Dockerized MySQL) and production (External MySQL).
 
 ---
 
 ## 💻 Tech Stack
 
-- **Runtime:** Node.js (v20+)
-- **Framework:** Express.js
-- **Database:** MySQL (via `mysql2/promise` driver)
-- **Testing:** Jest & Supertest
-- **Development Environment:** WSL (Windows Subsystem for Linux) / Docker
+-   **Runtime:** Node.js (v20+)
+-   **Framework:** Express.js
+-   **Database:** MySQL (via `mysql2/promise` driver)
+-   **Testing:** Jest & Supertest
+-   **Development Environment:** WSL (Windows Subsystem for Linux) / Docker
 
 ---
 
@@ -27,9 +27,9 @@ This repository contains the backend REST API for the Admin Panel, built using N
 
 ### Prerequisites
 
-- Node.js (v20+) and npm/pnpm
-- Docker and Docker Compose (Highly recommended for development)
-- A MySQL server instance (local or external)
+-   Node.js (v20+) and npm/pnpm
+-   Docker and Docker Compose (Highly recommended for development)
+-   A MySQL server instance (local or external)
 
 ### 1. Clone the Repository
 

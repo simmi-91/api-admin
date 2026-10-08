@@ -1,0 +1,48 @@
+import mysql, { type PoolOptions } from "mysql2/promise";
+import dotenv from "dotenv";
+dotenv.config();
+
+const isTest = process.env.NODE_ENV === "test";
+const isProd = process.env.NODE_ENV === "production";
+
+const DB_HOST = isProd ? process.env.PROD_DB_HOST : process.env.DEV_DB_HOST;
+const DB_USER = isProd ? process.env.PROD_DB_USER : process.env.DEV_DB_USER;
+const DB_PASSWORD = isProd ? process.env.PROD_DB_PASSWORD : process.env.DEV_DB_PASSWORD;
+const DB_NAME = isProd ? process.env.PROD_DB_NAME : process.env.DEV_DB_NAME;
+const DB_PORT = isProd ? process.env.PROD_DB_PORT || 3306 : process.env.DEV_DB_PORT || 3306;
+
+if (isProd && (!DB_HOST || !DB_USER || !DB_PASSWORD || !DB_NAME)) {
+    throw new Error("Missing critical database environment variables.");
+}
+
+const poolConfig: PoolOptions = {
+    host: DB_HOST,
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
+    port: Number(DB_PORT),
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+};
+
+const pool = mysql.createPool(poolConfig);
+if (!isTest) {
+    pool.getConnection()
+        .then((connection) => {
+            console.log(
+                `Database connection successful to: ${DB_NAME} on ${DB_HOST}:${DB_PORT} (Env: ${
+                    process.env.NODE_ENV || "development"
+                })`
+            );
+            connection.release();
+        })
+        .catch((err) => {
+            console.error(
+                `Database connection FAILED. Please ensure Dockerized MySQL is running. Error:`,
+                err.message
+            );
+        });
+}
+
+export default pool;

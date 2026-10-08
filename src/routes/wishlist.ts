@@ -1,6 +1,7 @@
 import express from "express";
 import dbPool from "../database.js";
 import multer from "multer";
+import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 import { requireAuth, verifyAdmin } from "../middleware/authMiddleware.js";
 import {
@@ -10,51 +11,97 @@ import {
   deleteFromR2,
   deleteManyFromR2,
   createFullImageUrl,
+  type ImageType,
 } from "../service/imageProvider.js";
+import { toAppError } from "../utils/errors.js";
+
+interface WishRow extends RowDataPacket {
+  id: number;
+  title: string;
+  description: string | null;
+  category: number;
+  active: number;
+  createdAt: Date;
+  updated: Date;
+}
+
+interface WishWithImageRow extends WishRow {
+  image_id: number | null;
+  image_path: string | null;
+  image_type: ImageType | null;
+  display_order: number | null;
+}
+
+// Columns are nullable in the schema, but this API always sets them
+interface WishImageRow extends RowDataPacket {
+  id: number;
+  wish_id: number;
+  image_type: ImageType;
+  image_path: string;
+  display_order: number;
+  created_at: Date;
+}
+
+interface WishImage {
+  id: number;
+  path: string;
+  display_order: number;
+  image_type: ImageType;
+  url: string;
+}
+
+type WishWithImages = Omit<WishWithImageRow, "image_id" | "image_path" | "image_type" | "display_order"> & {
+  images: WishImage[];
+};
+
+const WISH_WITH_IMAGES_SELECT = `
+  SELECT
+    w.*,
+    i.id AS image_id,
+    i.image_path,
+    i.image_type,
+    i.display_order
+  FROM wishlist w
+  LEFT JOIN wish_images i ON w.id = i.wish_id
+`;
+
+// One row per (wish, image) from the LEFT JOIN -> one object per wish with an images array.
+// A Map keeps the SQL ORDER BY; a plain object would reorder integer keys by id.
+const groupWishesWithImages = (rows: WishWithImageRow[]) => {
+  const wishlistMap = new Map<number, WishWithImages>();
+  rows.forEach((row) => {
+    let wishWithImages = wishlistMap.get(row.id);
+    if (!wishWithImages) {
+      const { image_id, image_path, image_type, display_order, ...wish } = row;
+      wishWithImages = { ...wish, images: [] };
+      wishlistMap.set(row.id, wishWithImages);
+    }
+
+    if (row.image_id) {
+      wishWithImages.images.push({
+        id: row.image_id,
+        path: row.image_path!,
+        display_order: row.display_order!,
+        image_type: row.image_type!,
+        url: createFullImageUrl(row.image_path!, row.image_type!),
+      });
+    }
+  });
+  return [...wishlistMap.values()];
+};
 
 const router = express.Router();
 
 // Resource - WISHLIST
 router.get("/active", async (req, res) => {
   try {
-    const [rows] = await dbPool.query(`
-      SELECT 
-        w.*, 
-        i.id AS image_id, 
-        i.image_path, 
-        i.image_type,
-        i.display_order
-      FROM wishlist w
-      LEFT JOIN wish_images i ON w.id = i.wish_id
+    const [rows] = await dbPool.query<WishWithImageRow[]>(`
+      ${WISH_WITH_IMAGES_SELECT}
       WHERE w.active=1
       ORDER BY w.createdAt DESC, i.display_order ASC
     `);
 
-    const wishlistMap = {};
-    rows.forEach((row) => {
-      if (!wishlistMap[row.id]) {
-        wishlistMap[row.id] = {
-          ...row,
-          images: [],
-        };
-        delete wishlistMap[row.id].image_id;
-        delete wishlistMap[row.id].image_path;
-        delete wishlistMap[row.id].display_order;
-        delete wishlistMap[row.id].image_type;
-      }
-
-      if (row.image_id) {
-        wishlistMap[row.id].images.push({
-          id: row.image_id,
-          path: row.image_path,
-          display_order: row.display_order,
-          image_type: row.image_type,
-          url: createFullImageUrl(row.image_path, row.image_type),
-        });
-      }
-    });
-
-    res.json(Object.values(wishlistMap));
+    res.json(groupWishesWithImages(rows));
   } catch (error) {
     console.error("Database error fetching wishlist items:", error);
     res.status(500).json({
@@ -65,43 +112,12 @@ router.get("/active", async (req, res) => {
 
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const [rows] = await dbPool.query(`
-      SELECT 
-        w.*, 
-        i.id AS image_id, 
-        i.image_path, 
-        i.image_type,
-        i.display_order
-      FROM wishlist w
-      LEFT JOIN wish_images i ON w.id = i.wish_id
+    const [rows] = await dbPool.query<WishWithImageRow[]>(`
+      ${WISH_WITH_IMAGES_SELECT}
       ORDER BY w.createdAt DESC, i.display_order ASC
     `);
 
-    const wishlistMap = {};
-    rows.forEach((row) => {
-      if (!wishlistMap[row.id]) {
-        wishlistMap[row.id] = {
-          ...row,
-          images: [],
-        };
-        delete wishlistMap[row.id].image_id;
-        delete wishlistMap[row.id].image_path;
-        delete wishlistMap[row.id].display_order;
-        delete wishlistMap[row.id].image_type;
-      }
-
-      if (row.image_id) {
-        wishlistMap[row.id].images.push({
-          id: row.image_id,
-          path: row.image_path,
-          display_order: row.display_order,
-          image_type: row.image_type,
-          url: createFullImageUrl(row.image_path, row.image_type),
-        });
-      }
-    });
-
-    res.json(Object.values(wishlistMap));
+    res.json(groupWishesWithImages(rows));
   } catch (error) {
     console.error("Database error fetching wishlist items:", error);
     res.status(500).json({
@@ -126,8 +142,8 @@ router.post("/", requireAuth, verifyAdmin, async (req, res) => {
 
   try {
     const sql = `
-      INSERT INTO wishlist 
-      (title, description, category, active, createdAt, updated) 
+      INSERT INTO wishlist
+      (title, description, category, active, createdAt, updated)
       VALUES (?, ?, ?, ?, ?, ?)
     `;
 
@@ -140,7 +156,7 @@ router.post("/", requireAuth, verifyAdmin, async (req, res) => {
       now,
     ];
 
-    const [result] = await dbPool.query(sql, values);
+    const [result] = await dbPool.query<ResultSetHeader>(sql, values);
 
     const newId = result.insertId;
 
@@ -156,8 +172,9 @@ router.post("/", requireAuth, verifyAdmin, async (req, res) => {
 
     res.status(201).json(newItem);
   } catch (error) {
+    const err = toAppError(error);
     // MySQL error code 1062 = duplicate entry key violation
-    if (error.code === "ER_DUP_ENTRY") {
+    if (err.code === "ER_DUP_ENTRY") {
       console.warn(`Attempted to insert duplicate title: "${itemTitle}"`);
       return res.status(409).json({
         error: "A wishlist item with this title already exists.",
@@ -167,7 +184,7 @@ router.post("/", requireAuth, verifyAdmin, async (req, res) => {
     console.error("Database error creating new wishlist item:", error);
     res.status(500).json({
       error: "Failed to create wishlist item due to a server error.",
-      sqlMessage: error.sqlMessage,
+      sqlMessage: err.sqlMessage,
     });
   }
 });
@@ -188,7 +205,7 @@ router.delete(
   requireAuth,
   verifyAdmin,
   async (req, res) => {
-    const { imagePath } = req.params;
+    const { imagePath } = req.params as { imagePath: string };
 
     if (!imagePath) {
       return res
@@ -197,7 +214,7 @@ router.delete(
     }
 
     try {
-      const [rows] = await dbPool.query(
+      const [rows] = await dbPool.query<WishImageRow[]>(
         "SELECT id FROM wish_images WHERE image_path = ? AND image_type = 'r2'",
         [imagePath],
       );
@@ -212,14 +229,14 @@ router.delete(
       res.status(200).json({ message: "Image deleted from R2 and database." });
     } catch (error) {
       console.error("Error on deleting:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: toAppError(error).message });
     }
   },
 );
 
 // Resource - SINGLE WISH
 router.put("/:id", requireAuth, verifyAdmin, async (req, res) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const { title, description, category, active } = req.body;
 
   if (!title) {
@@ -235,7 +252,7 @@ router.put("/:id", requireAuth, verifyAdmin, async (req, res) => {
 
   try {
     const sql = `
-      UPDATE wishlist 
+      UPDATE wishlist
       SET title=?, description=?, category=?, active=?, updated=?
       WHERE id=?
     `;
@@ -249,7 +266,7 @@ router.put("/:id", requireAuth, verifyAdmin, async (req, res) => {
       id,
     ];
 
-    const [result] = await dbPool.query(sql, values);
+    const [result] = await dbPool.query<ResultSetHeader>(sql, values);
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Wishlist item not found." });
     }
@@ -267,7 +284,7 @@ router.put("/:id", requireAuth, verifyAdmin, async (req, res) => {
     console.error("Database error updating wishlist item:", error);
     res.status(500).json({
       error: "Failed to update wishlist item due to a server error.",
-      sqlMessage: error.sqlMessage,
+      sqlMessage: toAppError(error).sqlMessage,
     });
   }
 });
@@ -279,9 +296,9 @@ router.delete("/:id", requireAuth, verifyAdmin, async (req, res) => {
     await dbPool.query("DELETE FROM wishlist WHERE id = ?", [id]);
   } catch (error) {
     console.error("Database error deleting wishlist item:", error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to delete wishlist item due to a server error.",
-      sqlMessage: error.sqlMessage,
+      sqlMessage: toAppError(error).sqlMessage,
     });
   }
 
@@ -293,7 +310,7 @@ router.get("/:id/images", requireAuth, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [rows] = await dbPool.query(
+    const [rows] = await dbPool.query<WishImageRow[]>(
       "SELECT * FROM wish_images WHERE wish_id = ? ORDER BY wish_id ASC, display_order ASC",
       [id],
     );
@@ -345,10 +362,10 @@ router.post(
       const { filename } = req.body;
       const customName = filename || "";
 
-      const r2Data = await uploadToR2(req.file, customName);
+      const r2Data = await uploadToR2(file, customName);
 
-      const [result] = await dbPool.query(
-        `INSERT INTO wish_images (wish_id, image_type, image_path, created_at, display_order) 
+      const [result] = await dbPool.query<ResultSetHeader>(
+        `INSERT INTO wish_images (wish_id, image_type, image_path, created_at, display_order)
        VALUES (
         ?, 'r2', ?, now(),
         (SELECT next_val FROM (SELECT COALESCE(MAX(display_order), 0) + 1 AS next_val FROM wish_images WHERE wish_id = ?) AS temp_table)
@@ -363,14 +380,15 @@ router.post(
         path: r2Data.key,
       });
     } catch (error) {
-      if (error.code === "DUPLICATE_FILE") {
-        return res.status(409).json({ error: error.message });
+      const err = toAppError(error);
+      if (err.code === "DUPLICATE_FILE") {
+        return res.status(409).json({ error: err.message });
       }
 
       console.error("R2 Upload Error:", error);
       res.status(500).json({
         error: "Failed to upload image to Cloudflare R2.",
-        details: error.message,
+        details: err.message,
       });
     }
   },
@@ -431,7 +449,7 @@ router.delete(
     const { id, imageId } = req.params;
 
     try {
-      const [rows] = await dbPool.query(
+      const [rows] = await dbPool.query<WishImageRow[]>(
         "SELECT image_path FROM wish_images WHERE id = ? AND wish_id = ? AND image_type = 'r2'",
         [imageId, id],
       );
@@ -445,7 +463,7 @@ router.delete(
       res.status(200).json({ message: "Image deleted from R2 and database." });
     } catch (error) {
       console.error("Error on deleting:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: toAppError(error).message });
     }
   },
 );
@@ -454,7 +472,7 @@ router.delete("/:id/images/", requireAuth, verifyAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [images] = await dbPool.query(
+    const [images] = await dbPool.query<WishImageRow[]>(
       "SELECT image_path FROM wish_images WHERE wish_id = ? AND image_type = 'r2'",
       [id],
     );
@@ -469,7 +487,7 @@ router.delete("/:id/images/", requireAuth, verifyAdmin, async (req, res) => {
       .json({ message: `Deleted all ${keys.length} images for wish ${id}` });
   } catch (error) {
     console.error("Database error deleting wishlist image:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: toAppError(error).message });
   }
 });
 
