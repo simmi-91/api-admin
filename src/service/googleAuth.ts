@@ -1,9 +1,10 @@
-import { OAuth2Client } from "google-auth-library";
+import { OAuth2Client, type TokenPayload } from "google-auth-library";
+import { toAppError } from "../utils/errors.js";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-export async function verifyGoogleToken(token) {
+export async function verifyGoogleToken(token: string): Promise<TokenPayload | null> {
   if (!GOOGLE_CLIENT_ID) {
     console.error("GOOGLE_CLIENT_ID is not set in environment variables.");
     return null;
@@ -16,9 +17,9 @@ export async function verifyGoogleToken(token) {
     });
 
     const payload = ticket.getPayload();
-    return payload;
+    return payload ?? null;
   } catch (error) {
-    console.error("Google Token Verification Failed:", error.message);
+    console.error("Google Token Verification Failed:", toAppError(error).message);
     return null;
   }
 }

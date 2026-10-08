@@ -25,7 +25,7 @@ export function getNonAdminToken() {
     isAdmin: false,
   };
 
-  const token = jwt.sign(nonAdminPayload, process.env.JWT_SECRET, {
+  const token = jwt.sign(nonAdminPayload, process.env.JWT_SECRET!, {
     expiresIn: "1h",
   });
   return `Bearer ${token}`;

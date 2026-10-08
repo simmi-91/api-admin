@@ -1,5 +1,6 @@
-import multer from "multer";
+import multer, { type FileFilterCallback } from "multer";
 import path from "path";
+import type { Request } from "express";
 import {
   S3Client,
   PutObjectCommand,
@@ -8,23 +9,33 @@ import {
   DeleteObjectsCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
+import { toAppError } from "../utils/errors.js";
+
+export type ImageType = "r2" | "url";
+
+export interface GalleryImage {
+  key: string | undefined;
+  url: string;
+  size: number | undefined;
+  lastModified: Date | undefined;
+}
 
 const s3Client = new S3Client({
   region: "auto",
   endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
   },
 });
 
 const storage = multer.memoryStorage();
 
-const sanitize = (name) => {
+const sanitize = (name: string) => {
   return name.replace(/[^a-zA-Z0-9æøåÆØÅ._-]/g, "_");
 };
 
-const imageFilter = (req, file, cb) => {
+const imageFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const isImage =
     allowedTypes.test(path.extname(file.originalname).toLowerCase()) &&
@@ -40,7 +51,7 @@ export const wishlistUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
-export const uploadToR2 = async (file, customFilename) => {
+export const uploadToR2 = async (file: Express.Multer.File, customFilename?: string) => {
   const ext = path.extname(file.originalname);
   const name = customFilename
     ? sanitize(customFilename.toLowerCase()) + ext
@@ -55,11 +66,11 @@ export const uploadToR2 = async (file, customFilename) => {
         Key: key,
       })
     );
-    const error = new Error(`DUPLICATE_FILE: '${name}' already exists`);
-    error.code = "DUPLICATE_FILE";
-    throw error;
+    throw Object.assign(new Error(`DUPLICATE_FILE: '${name}' already exists`), {
+      code: "DUPLICATE_FILE",
+    });
   } catch (err) {
-    if (err.name !== "NotFound") {
+    if (toAppError(err).name !== "NotFound") {
       throw err;
     }
   }
@@ -79,7 +90,7 @@ export const uploadToR2 = async (file, customFilename) => {
   };
 };
 
-export const deleteFromR2 = async (key) => {
+export const deleteFromR2 = async (key: string) => {
   if (!key) return;
   const command = new DeleteObjectCommand({
     Bucket: process.env.R2_BUCKET_NAME,
@@ -89,7 +100,7 @@ export const deleteFromR2 = async (key) => {
   await s3Client.send(command);
 };
 
-export const deleteManyFromR2 = async (keys) => {
+export const deleteManyFromR2 = async (keys: string[]) => {
   if (!keys || keys.length === 0) return;
   const command = new DeleteObjectsCommand({
     Bucket: process.env.R2_BUCKET_NAME,
@@ -100,7 +111,7 @@ export const deleteManyFromR2 = async (keys) => {
   await s3Client.send(command);
 };
 
-export const createFullImageUrl = (image_path, image_type) => {
+export const createFullImageUrl = (image_path: string, image_type: ImageType) => {
   let path = image_path;
   if (image_type === "r2") {
     path = `${process.env.R2_PUBLIC_URL}/${image_path}`;
@@ -108,7 +119,7 @@ export const createFullImageUrl = (image_path, image_type) => {
   return path;
 };
 
-export const listAllImages = async () => {
+export const listAllImages = async (): Promise<GalleryImage[]> => {
   const command = new ListObjectsV2Command({
     Bucket: process.env.R2_BUCKET_NAME,
     Prefix: "",
