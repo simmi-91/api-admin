@@ -1,9 +1,10 @@
-import express, { type NextFunction, type Request, type Response } from "express";
+import express from "express";
 import dbPool from "../database.js";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 import { requireAuth, verifyAdmin } from "../middleware/authMiddleware.js";
-import type { AppError } from "../utils/errors.js";
+import { errorHandler } from "../middleware/errorHandler.js";
+import { HttpError } from "../utils/errors.js";
 
 type GiftStatus = "idea" | "bought" | "sent" | "given";
 type GiftRole = "giver" | "recipient";
@@ -94,7 +95,9 @@ router.get("/years", async (req, res) => {
     res.json([...years].sort((a, b) => b - a));
 });
 
-router.get("/summary", async (req, res) => {});
+router.get("/summary", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
 // Gift
 router.get("/gifts", async (req, res) => {
@@ -153,13 +156,21 @@ router.get("/gifts/:id", async (req, res) => {
     res.json(gift);
 });
 
-router.post("/gifts", async (req, res) => {});
+router.post("/gifts", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
-router.patch("/gifts/:id", async (req, res) => {});
+router.patch("/gifts/:id", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
-router.delete("/gifts/:id", async (req, res) => {});
+router.delete("/gifts/:id", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
-router.post("/gifts/mark-given", async (req, res) => {});
+router.post("/gifts/mark-given", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
 // Persons
 router.get("/persons", async (req, res) => {
@@ -191,9 +202,13 @@ router.post("/persons", async (req, res) => {
     res.status(201).json(newItem);
 });
 
-router.patch("/persons/:id", async (req, res) => {});
+router.patch("/persons/:id", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
-router.delete("/persons/:id", async (req, res) => {});
+router.delete("/persons/:id", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
 // Occasions
 router.get("/occasions", async (req, res) => {
@@ -204,27 +219,25 @@ router.get("/occasions", async (req, res) => {
     res.json(rows);
 });
 
-router.post("/occasions", async (req, res) => {});
+router.post("/occasions", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
-router.patch("/occasions/:id", async (req, res) => {});
+router.patch("/occasions/:id", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
-router.delete("/occasions/:id", async (req, res) => {});
+router.delete("/occasions/:id", async (req, res) => {
+    throw new HttpError(501, "Not implemented");
+});
 
 // Error handler
-router.use((err: AppError, req: Request, res: Response, next: NextFunction) => {
-    switch (err.code) {
-        case "ER_DUP_ENTRY":
-            return res.status(409).json({ error: "Already exists" });
-        case "ER_ROW_IS_REFERENCED_2":
-            return res.status(409).json({ error: "In use by one or more gifts" });
-        case "ER_NO_REFERENCED_ROW_2":
-            return res.status(400).json({ error: "Unknown person or occasion" });
-        case "ER_CHECK_CONSTRAINT_VIOLATED":
-            return res.status(400).json({ error: "Gift is missing required fields" });
-        default:
-            console.error(err);
-            return res.status(500).json({ error: "Internal error" });
-    }
-});
+router.use(
+    errorHandler({
+        ER_ROW_IS_REFERENCED_2: [409, "In use by one or more gifts"],
+        ER_NO_REFERENCED_ROW_2: [400, "Unknown person or occasion"],
+        ER_CHECK_CONSTRAINT_VIOLATED: [400, "Gift is missing required fields"],
+    })
+);
 
 export default router;

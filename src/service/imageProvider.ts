@@ -9,7 +9,7 @@ import {
   DeleteObjectsCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
-import { toAppError } from "../utils/errors.js";
+import { HttpError, toAppError } from "../utils/errors.js";
 
 export type ImageType = "r2" | "url";
 
@@ -42,7 +42,7 @@ const imageFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCall
     allowedTypes.test(file.mimetype);
 
   if (isImage) return cb(null, true);
-  cb(new Error("Only image files are allowed"));
+  cb(new HttpError(400, "Only image files are allowed (jpeg, jpg, png, gif, webp)"));
 };
 
 export const wishlistUpload = multer({
@@ -66,9 +66,7 @@ export const uploadToR2 = async (file: Express.Multer.File, customFilename?: str
         Key: key,
       })
     );
-    throw Object.assign(new Error(`DUPLICATE_FILE: '${name}' already exists`), {
-      code: "DUPLICATE_FILE",
-    });
+    throw new HttpError(409, `DUPLICATE_FILE: '${name}' already exists`);
   } catch (err) {
     if (toAppError(err).name !== "NotFound") {
       throw err;

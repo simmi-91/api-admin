@@ -6,6 +6,8 @@ import path from "path";
 import authRoutes from "./src/routes/auth.js";
 import wishlistRoutes from "./src/routes/wishlist.js";
 import giftlogRoutes from "./src/routes/giftlog.js";
+import { errorHandler } from "./src/middleware/errorHandler.js";
+import { HttpError } from "./src/utils/errors.js";
 
 dotenv.config();
 
@@ -38,7 +40,7 @@ const corsOptions: CorsOptions = {
         if (corsOrigin.includes(origin)) {
             callback(null, true);
         } else {
-            callback(new Error("Not allowed by CORS"));
+            callback(new HttpError(403, "Not allowed by CORS"));
         }
     },
     allowedHeaders: ["Content-Type", "Authorization", "X-Custom-Header"],
@@ -72,6 +74,9 @@ if (process.env.NODE_ENV !== "production") {
     app.use("/uploads", express.static(uploadsPath));
     console.log(`Serving uploads from: ${uploadsPath}`);
 }
+
+// Fallback for errors not handled by a router (auth, CORS, invalid JSON body)
+app.use(errorHandler());
 
 // Start server (skip in test mode)
 if (process.env.NODE_ENV !== "test") {

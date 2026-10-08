@@ -2,6 +2,7 @@ import { jest } from "@jest/globals";
 import type { NextFunction, Request, Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type { GalleryImage } from "../src/service/imageProvider.js";
+import { HttpError } from "../src/utils/errors.js";
 
 jest.unstable_mockModule("../src/service/imageProvider.js", () => ({
   wishlistUpload: {
@@ -320,9 +321,7 @@ describe("Wishlist API", () => {
           .set("Authorization", adminToken);
 
         expect(response.status).toBe(500);
-        expect(response.body.error).toBe(
-          "Failed to delete wishlist item due to a server error."
-        );
+        expect(response.body.error).toBe("Internal error");
         expect(jsonSpy).toHaveBeenCalledTimes(1);
       } finally {
         querySpy.mockRestore();
@@ -401,10 +400,9 @@ describe("Wishlist API", () => {
          VALUES (?, ?, ?, ?, ?, ?)`,
         ["Dup Target", "Desc", 0, 1, now, now]
       );
-      const duplicateErr = Object.assign(new Error("DUPLICATE_FILE"), {
-        code: "DUPLICATE_FILE",
-      });
-      jest.mocked(imageProvider.uploadToR2).mockRejectedValue(duplicateErr);
+      jest
+        .mocked(imageProvider.uploadToR2)
+        .mockRejectedValue(new HttpError(409, "DUPLICATE_FILE"));
 
       const response = await request(app)
         .post(`/wishlist/${insert.insertId}/images`)
