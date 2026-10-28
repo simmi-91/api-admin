@@ -246,7 +246,24 @@ describe("Giftlog API", () => {
       const response = await api("get", "/persons");
 
       expect(response.status).toBe(200);
-      expect(response.body).toContainEqual({ id, name: name("kari"), is_household: 1 });
+      expect(response.body).toContainEqual({ id, name: name("kari"), is_household: 1, gift_count: 0 });
+    });
+
+    it("GET should count each gift a person is linked to once", async () => {
+      const occasionId = await createOccasion("jul");
+      const id = await createPerson("kari");
+      await createGift({ title: name("gift1"), year: GIFT_YEAR, occasion_id: occasionId, giver_ids: [id] });
+      await createGift({
+        title: name("gift2"),
+        year: GIFT_YEAR,
+        occasion_id: occasionId,
+        giver_ids: [id],
+        recipient_ids: [id],
+      });
+
+      const response = await api("get", "/persons");
+
+      expect(response.body).toContainEqual({ id, name: name("kari"), is_household: 0, gift_count: 2 });
     });
 
     it("PATCH should update name and is_household", async () => {
@@ -256,7 +273,7 @@ describe("Giftlog API", () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ message: "Person updated" });
       const list = await api("get", "/persons");
-      expect(list.body).toContainEqual({ id, name: name("kari2"), is_household: 1 });
+      expect(list.body).toContainEqual({ id, name: name("kari2"), is_household: 1, gift_count: 0 });
     });
 
     it("PATCH should return 400 listing missing fields", async () => {

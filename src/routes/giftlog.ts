@@ -428,8 +428,15 @@ router.delete("/gifts/:id", async (req, res) => {
 });
 
 // Persons
+// gift_count: gifts (ideas too) the person is giver or recipient of. Must be 0 before the person can be deleted
 router.get("/persons", async (req, res) => {
-    const [rows] = await dbPool.query<PersonRow[]>(`SELECT id, name, is_household FROM giftlog_person`, []);
+    const [rows] = await dbPool.query<PersonRow[]>(
+        `SELECT p.id, p.name, p.is_household, COUNT(DISTINCT gp.gift_id) AS gift_count
+         FROM giftlog_person p
+         LEFT JOIN giftlog_gift_person gp ON gp.person_id = p.id
+         GROUP BY p.id`,
+        []
+    );
     res.json(rows);
 });
 
